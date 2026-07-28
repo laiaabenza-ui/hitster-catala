@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="ca">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hitster Català — Reproductor cec</title>
+<style>
+  :root{
+    --red:#bf1721;
+    --gold:#ffd400;
+    --dark:#1f1f24;
+    --cream:#faf5e6;
+  }
+  * { box-sizing: border-box; }
+  body{
+    margin:0;
+    font-family: 'Segoe UI', Arial, sans-serif;
+    background: var(--dark);
+    color: var(--cream);
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    min-height:100vh;
+    padding:24px;
+  }
+  h1{
+    font-size:15px;
+    letter-spacing:0.08em;
+    text-transform:uppercase;
+    color:var(--gold);
+    margin-bottom:4px;
+  }
+  .sub{
+    font-size:13px;
+    color:#a9a9ac;
+    margin-bottom:28px;
+    text-align:center;
+  }
+  .card{
+    width:280px;
+    height:280px;
+    border-radius:16px;
+    border:3px solid var(--gold);
+    position:relative;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    background:var(--cream);
+    overflow:hidden;
+  }
+  .veil{
+    position:absolute;
+    inset:0;
+    background:var(--dark);
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    gap:18px;
+    z-index:5;
+    transition:opacity .4s ease;
+  }
+  .veil.hidden{
+    opacity:0;
+    pointer-events:none;
+  }
+  .qmark{
+    font-size:64px;
+    color:var(--gold);
+    font-weight:bold;
+  }
+  button{
+    font-size:14px;
+    font-weight:bold;
+    letter-spacing:0.03em;
+    padding:12px 22px;
+    border-radius:30px;
+    border:none;
+    cursor:pointer;
+    background:var(--gold);
+    color:var(--dark);
+  }
+  button.secondary{
+    background:transparent;
+    color:var(--cream);
+    border:1.5px solid var(--cream);
+  }
+  button:disabled{
+    opacity:0.4;
+    cursor:default;
+  }
+  iframe{
+    border:0;
+    width:100%;
+    height:152px;
+    position:absolute;
+    bottom:0;
+    left:0;
+  }
+  .picker{
+    display:flex;
+    gap:10px;
+    margin-top:28px;
+    flex-wrap:wrap;
+    justify-content:center;
+  }
+  .picker button{
+    background:transparent;
+    color:var(--cream);
+    border:1.5px solid #555;
+    font-size:12px;
+    padding:8px 14px;
+  }
+  .picker button.active{
+    border-color:var(--gold);
+    color:var(--gold);
+  }
+  .footnote{
+    font-size:11px;
+    color:#777;
+    margin-top:30px;
+    text-align:center;
+    max-width:320px;
+  }
+</style>
+</head>
+<body>
+
+<h1>Hitster Català — prova</h1>
+<div class="sub">Toca "Reprodueix" i no miris la pantalla.<br>Quan vulguis comprovar la resposta, toca "Revela".</div>
+
+<div class="card">
+  <iframe id="player" src="" allow="encrypted-media; autoplay"></iframe>
+  <div class="veil" id="veil">
+    <div class="qmark">?</div>
+    <button id="playBtn">▶ Reprodueix</button>
+  </div>
+</div>
+
+<button class="secondary" id="revealBtn" style="margin-top:18px;" disabled>Revela la cançó</button>
+
+<div class="picker" id="picker"></div>
+
+<div class="footnote">
+  Prototip a petita escala — 3 cançons amb ID de Spotify verificat manualment (L'Estaca, Coti x Coti, Sort de tu). Sense compte Premium connectat, Spotify només reprodueix 30 segons de mostra.
+</div>
+
+<script>
+const SONGS = [
+  { num: 6,  year: 1968, artist: "Lluís Llach",  title: "L'Estaca",      id: "6V6p3kX685TlL51aeSgzpa" },
+  { num: 140, year: 2023, artist: "The Tyets",   title: "Coti x Coti",   id: "73ZTxlG3t79x4EY9EVGgPk" },
+  { num: 147, year: 2024, artist: "Oques Grasses", title: "Sort de tu",  id: "054BhpaxELmhu24ECqU8un" },
+];
+
+const params = new URLSearchParams(window.location.search);
+const startId = params.get('id');
+
+let current = SONGS.find(s => s.id === startId) || SONGS[0];
+
+const player = document.getElementById('player');
+const veil = document.getElementById('veil');
+const playBtn = document.getElementById('playBtn');
+const revealBtn = document.getElementById('revealBtn');
+const picker = document.getElementById('picker');
+
+function loadSong(song, autoplay){
+  current = song;
+  const auto = autoplay ? 1 : 0;
+  player.src = `https://open.spotify.com/embed/track/${song.id}?utm_source=generator&autoplay=${auto}`;
+  veil.classList.remove('hidden');
+  revealBtn.disabled = true;
+  revealBtn.textContent = 'Revela la cançó';
+  renderPicker();
+}
+
+function renderPicker(){
+  picker.innerHTML = '';
+  SONGS.forEach(s => {
+    const b = document.createElement('button');
+    b.textContent = `Nº ${String(s.num).padStart(3,'0')}`;
+    if (s.id === current.id) b.classList.add('active');
+    b.onclick = () => loadSong(s, false);
+    picker.appendChild(b);
+  });
+}
+
+playBtn.onclick = () => {
+  loadSong(current, true);
+  veil.classList.add('hidden');
+  revealBtn.disabled = false;
+};
+
+revealBtn.onclick = () => {
+  revealBtn.textContent = `${current.artist} · "${current.title}" · ${current.year}`;
+};
+
+loadSong(current, false);
+</script>
+
+</body>
+</html>
