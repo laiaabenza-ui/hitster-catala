@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="ca">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hitster Català</title>
+<style>
+  :root{
+    --gold:#ffd400;
+    --dark:#1f1f24;
+    --cream:#faf5e6;
+  }
+  * { box-sizing: border-box; }
+  body{
+    margin:0;
+    font-family: 'Segoe UI', Arial, sans-serif;
+    background: var(--dark);
+    color: var(--cream);
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    min-height:100vh;
+    padding:24px;
+  }
+  h1{
+    font-size:14px;
+    letter-spacing:0.08em;
+    text-transform:uppercase;
+    color:var(--gold);
+    margin-bottom:28px;
+  }
+  .card{
+    width:280px;
+    height:280px;
+    border-radius:16px;
+    border:3px solid var(--gold);
+    position:relative;
+    background:var(--dark);
+    overflow:hidden;
+  }
+  #embed-holder{
+    position:absolute;
+    inset:0;
+    opacity:0;
+  }
+  .veil{
+    position:absolute;
+    inset:0;
+    background:var(--dark);
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    gap:18px;
+    z-index:5;
+  }
+  .qmark{
+    font-size:64px;
+    color:var(--gold);
+    font-weight:bold;
+  }
+  button{
+    font-size:14px;
+    font-weight:bold;
+    letter-spacing:0.03em;
+    padding:12px 24px;
+    border-radius:30px;
+    border:none;
+    cursor:pointer;
+    background:var(--gold);
+    color:var(--dark);
+  }
+  button.secondary{
+    background:transparent;
+    color:var(--cream);
+    border:1.5px solid var(--cream);
+    margin-top:20px;
+  }
+  button:disabled{
+    opacity:0.35;
+    cursor:default;
+  }
+  .reveal-box{
+    text-align:center;
+    display:none;
+  }
+  .reveal-box.show{
+    display:block;
+  }
+  .reveal-box .artist{
+    font-size:13px;
+    color:#a9a9ac;
+    text-transform:uppercase;
+    letter-spacing:0.05em;
+  }
+  .reveal-box .title{
+    font-size:20px;
+    font-weight:bold;
+    margin:6px 0;
+  }
+  .reveal-box .year{
+    font-size:32px;
+    font-weight:bold;
+    color:var(--gold);
+  }
+  .error{
+    text-align:center;
+    color:#a9a9ac;
+    font-size:14px;
+    max-width:280px;
+  }
+</style>
+</head>
+<body>
+
+<h1>Hitster Català</h1>
+
+<div id="app"></div>
+
+<script src="https://open.spotify.com/embed/iframe-api/v1" async></script>
+<script>
+const params = new URLSearchParams(window.location.search);
+const trackId = params.get('id');
+const year = params.get('any') || '';
+const artist = params.get('artista') || '';
+const title = params.get('titol') || '';
+
+const app = document.getElementById('app');
+
+if (!trackId) {
+  app.innerHTML = `<div class="error">Escaneja una carta del joc per començar.<br>Aquesta pàgina no funciona per si sola.</div>`;
+} else {
+  app.innerHTML = `
+    <div class="card">
+      <div id="embed-holder"></div>
+      <div class="veil" id="veil">
+        <div class="qmark" id="qmark">?</div>
+        <button id="playBtn">▶ Reprodueix</button>
+        <div class="reveal-box" id="revealBox">
+          <div class="artist">${artist}</div>
+          <div class="title">${title}</div>
+          <div class="year">${year}</div>
+        </div>
+      </div>
+    </div>
+    <button class="secondary" id="revealBtn" disabled>Revela la cançó</button>
+  `;
+
+  const playBtn = document.getElementById('playBtn');
+  const revealBtn = document.getElementById('revealBtn');
+  const qmark = document.getElementById('qmark');
+  const revealBox = document.getElementById('revealBox');
+  let controller = null;
+  let ready = false;
+
+  window.onSpotifyIframeApiReady = (IFrameAPI) => {
+    const element = document.getElementById('embed-holder');
+    const options = { uri: `spotify:track:${trackId}` };
+    IFrameAPI.createController(element, options, (EmbedController) => {
+      controller = EmbedController;
+      ready = true;
+    });
+  };
+
+  playBtn.onclick = () => {
+    if (!ready || !controller) {
+      playBtn.textContent = 'Carregant…';
+      setTimeout(() => { if (ready && controller) { controller.play(); playBtn.style.display='none'; revealBtn.disabled = false; } }, 800);
+      return;
+    }
+    controller.play();
+    playBtn.style.display = 'none';
+    revealBtn.disabled = false;
+  };
+
+  revealBtn.onclick = () => {
+    qmark.style.display = 'none';
+    revealBox.classList.add('show');
+    revealBtn.disabled = true;
+  };
+}
+</script>
+
+</body>
+</html>
