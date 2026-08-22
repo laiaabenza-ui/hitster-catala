@@ -164,14 +164,30 @@ if (!trackId) {
   };
 
   playBtn.onclick = () => {
-    if (!ready || !controller) {
-      playBtn.textContent = 'Carregant…';
-      setTimeout(() => { if (ready && controller) { controller.play(); playBtn.style.display='none'; revealBtn.disabled = false; } }, 800);
+    if (ready && controller) {
+      controller.play();
+      playBtn.style.display = 'none';
+      revealBtn.disabled = false;
       return;
     }
-    controller.play();
-    playBtn.style.display = 'none';
-    revealBtn.disabled = false;
+    // Not ready yet: keep polling instead of giving up after one short try
+    playBtn.textContent = 'Carregant…';
+    playBtn.disabled = true;
+    let attempts = 0;
+    const maxAttempts = 40; // 40 x 250ms = 10 segons de marge
+    const poll = setInterval(() => {
+      attempts++;
+      if (ready && controller) {
+        clearInterval(poll);
+        controller.play();
+        playBtn.style.display = 'none';
+        revealBtn.disabled = false;
+      } else if (attempts >= maxAttempts) {
+        clearInterval(poll);
+        playBtn.disabled = false;
+        playBtn.textContent = 'Torna a provar';
+      }
+    }, 250);
   };
 
   revealBtn.onclick = () => {
