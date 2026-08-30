@@ -135,11 +135,11 @@ const CLIENT_ID = '9e2ebdcd164645d9894be217031acb62';
 const REDIRECT_URI = 'https://laiaabenza-ui.github.io/hitster-catala/play.html';
 const SCOPES = 'streaming user-read-email user-read-private user-modify-playback-state user-read-playback-state';
 
-const params = new URLSearchParams(window.location.search);
-const trackId = params.get('id');
-const year = params.get('any') || '';
-const artist = params.get('artista') || '';
-const title = params.get('titol') || '';
+let params = new URLSearchParams(window.location.search);
+let trackId = params.get('id');
+let year = params.get('any') || '';
+let artist = params.get('artista') || '';
+let title = params.get('titol') || '';
 
 const app = document.getElementById('app');
 
@@ -229,12 +229,10 @@ async function exchangeCodeForToken(code) {
 
 // ---------- Main flow ----------
 async function main() {
-  if (!trackId) {
-    app.innerHTML = `<div class="error">Escaneja una carta del joc per començar.<br>Aquesta pàgina no funciona per si sola.</div>`;
-    return;
-  }
-
-  // Returning from Spotify login?
+  // Returning from Spotify login? Handle this FIRST, before checking trackId,
+  // because Spotify's redirect strips our song params (id/any/artista/titol)
+  // and only appends its own ?code=&state= — we must restore them from
+  // sessionStorage before deciding whether we have a song to play.
   const code = params.get('code');
   if (code) {
     app.innerHTML = `<div class="status">Iniciant sessió amb Spotify…</div>`;
@@ -242,10 +240,21 @@ async function main() {
       await exchangeCodeForToken(code);
       const restore = sessionStorage.getItem('sp_return_params') || '';
       window.history.replaceState({}, '', window.location.pathname + restore);
+      // re-parse params now that the song info is restored
+      params = new URLSearchParams(restore);
+      trackId = params.get('id');
+      year = params.get('any') || '';
+      artist = params.get('artista') || '';
+      title = params.get('titol') || '';
     } catch (e) {
       app.innerHTML = `<div class="error">No s'ha pogut iniciar sessió amb Spotify. Torna-ho a provar escanejant la carta de nou.</div>`;
       return;
     }
+  }
+
+  if (!trackId) {
+    app.innerHTML = `<div class="error">Escaneja una carta del joc per començar.<br>Aquesta pàgina no funciona per si sola.</div>`;
+    return;
   }
 
   let accessToken = getStoredAccessToken();
