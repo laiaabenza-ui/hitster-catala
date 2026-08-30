@@ -39,11 +39,6 @@
     background:var(--dark);
     overflow:hidden;
   }
-  #embed-holder{
-    position:absolute;
-    inset:0;
-    opacity:0;
-  }
   .veil{
     position:absolute;
     inset:0;
@@ -52,8 +47,10 @@
     flex-direction:column;
     align-items:center;
     justify-content:center;
-    gap:18px;
+    gap:16px;
     z-index:5;
+    padding:20px;
+    text-align:center;
   }
   .qmark{
     font-size:64px;
@@ -109,6 +106,20 @@
     color:#a9a9ac;
     font-size:14px;
     max-width:280px;
+    line-height:1.5;
+  }
+  .status{
+    font-size:12px;
+    color:#8a8a8e;
+    margin-top:14px;
+    text-align:center;
+    max-width:260px;
+    line-height:1.4;
+  }
+  .login-note{
+    font-size:11px;
+    color:#7a7a7e;
+    margin-top:10px;
   }
 </style>
 </head>
@@ -118,8 +129,12 @@
 
 <div id="app"></div>
 
-<script src="https://open.spotify.com/embed/iframe-api/v1" async></script>
 <script>
+// ====== CONFIG ======
+const CLIENT_ID = '9e2ebdcd164645d9894be217031acb62';
+const REDIRECT_URI = 'https://laiaabenza-ui.github.io/hitster-catala/play.html';
+const SCOPES = 'streaming user-read-email user-read-private user-modify-playback-state user-read-playback-state';
+
 const params = new URLSearchParams(window.location.search);
 const trackId = params.get('id');
 const year = params.get('any') || '';
@@ -128,15 +143,139 @@ const title = params.get('titol') || '';
 
 const app = document.getElementById('app');
 
-if (!trackId) {
-  app.innerHTML = `<div class="error">Escaneja una carta del joc per començar.<br>Aquesta pàgina no funciona per si sola.</div>`;
-} else {
+// ---------- PKCE helpers ----------
+function randomString(len) {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  let out = '';
+  const rnd = crypto.getRandomValues(new Uint8Array(len));
+  for (let i = 0; i < len; i++) out += chars[rnd[i] % chars.length];
+  return out;
+}
+async function sha256(plain) {
+  const data = new TextEncoder().encode(plain);
+  return crypto.subtle.digest('SHA-256', data);
+}
+function base64UrlEncode(buffer) {
+  return btoa(String.fromCharCode(...new Uint8Array(buffer)))
+    .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+function saveTokens(data) {
+  const expiresAt = Date.now() + (data.expires_in * 1000) - 30000; // 30s margin
+  localStorage.setItem('sp_access_token', data.access_token);
+  localStorage.setItem('sp_expires_at', String(expiresAt));
+  if (data.refresh_token) localStorage.setItem('sp_refresh_token', data.refresh_token);
+}
+
+function getStoredAccessToken() {
+  const token = localStorage.getItem('sp_access_token');
+  const expiresAt = parseInt(localStorage.getItem('sp_expires_at') || '0', 10);
+  if (token && Date.now() < expiresAt) return token;
+  return null;
+}
+
+async function refreshAccessToken() {
+  const refreshToken = localStorage.getItem('sp_refresh_token');
+  if (!refreshToken) return null;
+  const resp = await fetch('https://accounts.spotify.com/api/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      grant_type: 'refresh_token',
+      refresh_token: refreshToken,
+      client_id: CLIENT_ID,
+    }),
+  });
+  if (!resp.ok) return null;
+  const data = await resp.json();
+  saveTokens(data);
+  return data.access_token;
+}
+
+async function startLogin() {
+  const verifier = randomString(64);
+  sessionStorage.setItem('sp_pkce_verifier', verifier);
+  // preserve the song params through the redirect round-trip
+  sessionStorage.setItem('sp_return_params', window.location.search);
+  const challenge = base64UrlEncode(await sha256(verifier));
+
+  const authUrl = new URL('https://accounts.spotify.com/authorize');
+  authUrl.searchParams.set('client_id', CLIENT_ID);
+  authUrl.searchParams.set('response_type', 'code');
+  authUrl.searchParams.set('redirect_uri', REDIRECT_URI);
+  authUrl.searchParams.set('scope', SCOPES);
+  authUrl.searchParams.set('code_challenge_method', 'S256');
+  authUrl.searchParams.set('code_challenge', challenge);
+  window.location.href = authUrl.toString();
+}
+
+async function exchangeCodeForToken(code) {
+  const verifier = sessionStorage.getItem('sp_pkce_verifier');
+  const resp = await fetch('https://accounts.spotify.com/api/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      client_id: CLIENT_ID,
+      grant_type: 'authorization_code',
+      code: code,
+      redirect_uri: REDIRECT_URI,
+      code_verifier: verifier,
+    }),
+  });
+  if (!resp.ok) throw new Error('token_exchange_failed');
+  const data = await resp.json();
+  saveTokens(data);
+}
+
+// ---------- Main flow ----------
+async function main() {
+  if (!trackId) {
+    app.innerHTML = `<div class="error">Escaneja una carta del joc per començar.<br>Aquesta pàgina no funciona per si sola.</div>`;
+    return;
+  }
+
+  // Returning from Spotify login?
+  const code = params.get('code');
+  if (code) {
+    app.innerHTML = `<div class="status">Iniciant sessió amb Spotify…</div>`;
+    try {
+      await exchangeCodeForToken(code);
+      const restore = sessionStorage.getItem('sp_return_params') || '';
+      window.history.replaceState({}, '', window.location.pathname + restore);
+    } catch (e) {
+      app.innerHTML = `<div class="error">No s'ha pogut iniciar sessió amb Spotify. Torna-ho a provar escanejant la carta de nou.</div>`;
+      return;
+    }
+  }
+
+  let accessToken = getStoredAccessToken();
+  if (!accessToken) {
+    accessToken = await refreshAccessToken();
+  }
+
+  if (!accessToken) {
+    app.innerHTML = `
+      <div class="card">
+        <div class="veil">
+          <div class="qmark">?</div>
+          <button id="loginBtn">Inicia sessió amb Spotify</button>
+          <div class="login-note">Cal Spotify Premium.<br>Només caldrà fer-ho un cop en aquest mòbil.</div>
+        </div>
+      </div>`;
+    document.getElementById('loginBtn').onclick = startLogin;
+    return;
+  }
+
+  renderPlayer(accessToken);
+}
+
+function renderPlayer(accessToken) {
   app.innerHTML = `
     <div class="card">
-      <div id="embed-holder"></div>
       <div class="veil" id="veil">
         <div class="qmark" id="qmark">?</div>
         <button id="playBtn">▶ Reprodueix</button>
+        <div class="status" id="status"></div>
         <div class="reveal-box" id="revealBox">
           <div class="artist">${artist}</div>
           <div class="title">${title}</div>
@@ -151,37 +290,93 @@ if (!trackId) {
   const revealBtn = document.getElementById('revealBtn');
   const qmark = document.getElementById('qmark');
   const revealBox = document.getElementById('revealBox');
-  let controller = null;
-  let ready = false;
+  const statusEl = document.getElementById('status');
 
-  window.onSpotifyIframeApiReady = (IFrameAPI) => {
-    const element = document.getElementById('embed-holder');
-    const options = { uri: `spotify:track:${trackId}` };
-    IFrameAPI.createController(element, options, (EmbedController) => {
-      controller = EmbedController;
-      ready = true;
+  let player = null;
+  let deviceId = null;
+  let sdkReady = false;
+
+  window.onSpotifyWebPlaybackSDKReady = () => {
+    player = new Spotify.Player({
+      name: 'Hitster Català',
+      getOAuthToken: cb => { cb(getStoredAccessToken() || accessToken); },
+      volume: 0.9,
     });
+
+    player.addListener('ready', ({ device_id }) => {
+      deviceId = device_id;
+      sdkReady = true;
+      statusEl.textContent = '';
+    });
+
+    player.addListener('initialization_error', () => {
+      statusEl.textContent = 'El navegador no permet reproduir-hi. Prova amb Chrome o Safari actualitzat.';
+    });
+    player.addListener('authentication_error', () => {
+      statusEl.textContent = 'Sessió caducada. Recarrega i torna a iniciar sessió.';
+      localStorage.removeItem('sp_access_token');
+    });
+    player.addListener('account_error', () => {
+      statusEl.textContent = 'Cal un compte Spotify PREMIUM per reproduir la cançó sencera.';
+    });
+    player.addListener('playback_error', () => {
+      statusEl.textContent = 'No s\'ha pogut reproduir aquesta cançó.';
+    });
+
+    player.connect();
   };
 
-  playBtn.onclick = () => {
-    if (ready && controller) {
-      controller.play();
-      playBtn.style.display = 'none';
-      revealBtn.disabled = false;
-      return;
+  if (!document.getElementById('spotify-sdk-script')) {
+    const s = document.createElement('script');
+    s.id = 'spotify-sdk-script';
+    s.src = 'https://sdk.scdn.co/spotify-player.js';
+    document.body.appendChild(s);
+  } else if (window.Spotify) {
+    window.onSpotifyWebPlaybackSDKReady();
+  }
+
+  async function playTrack() {
+    let token = getStoredAccessToken();
+    if (!token) token = await refreshAccessToken();
+    if (!token) { statusEl.textContent = 'Sessió caducada, recarrega la pàgina.'; return; }
+
+    const resp = await fetch(`https://api.spotify.com/v1/me/player/play?device_id=${deviceId}`, {
+      method: 'PUT',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ uris: [`spotify:track:${trackId}`] }),
+    });
+
+    if (resp.status === 403 || resp.status === 404) {
+      statusEl.textContent = 'Cal Spotify Premium per reproduir la cançó sencera.';
+      return false;
     }
-    // Not ready yet: keep polling instead of giving up after one short try
-    playBtn.textContent = 'Carregant…';
+    if (!resp.ok && resp.status !== 204) {
+      statusEl.textContent = 'No s\'ha pogut reproduir. Torna-ho a provar.';
+      return false;
+    }
+    return true;
+  }
+
+  playBtn.onclick = () => {
     playBtn.disabled = true;
+    playBtn.textContent = 'Carregant…';
     let attempts = 0;
-    const maxAttempts = 40; // 40 x 250ms = 10 segons de marge
-    const poll = setInterval(() => {
+    const maxAttempts = 40;
+    const poll = setInterval(async () => {
       attempts++;
-      if (ready && controller) {
+      if (sdkReady && deviceId) {
         clearInterval(poll);
-        controller.play();
-        playBtn.style.display = 'none';
-        revealBtn.disabled = false;
+        const ok = await playTrack();
+        if (ok !== false) {
+          playBtn.style.display = 'none';
+          revealBtn.disabled = false;
+        } else {
+          playBtn.disabled = false;
+          playBtn.textContent = '▶ Reprodueix';
+        }
       } else if (attempts >= maxAttempts) {
         clearInterval(poll);
         playBtn.disabled = false;
@@ -196,6 +391,8 @@ if (!trackId) {
     revealBtn.disabled = true;
   };
 }
+
+main();
 </script>
 
 </body>
